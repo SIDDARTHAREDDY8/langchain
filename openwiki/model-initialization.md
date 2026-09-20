@@ -5,11 +5,11 @@ description: Factory function for instantiating chat models from provider string
 tags: [chat-models, factory-pattern, initialization, model-parameters, configuration, provider-registry]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-03T15:18:34.589Z
+    at: 2026-09-20T08:24:05.454Z
 sources:
   - id: openwiki-source-c479d4fffee5cf62576699e4
     resource: repo://libs/langchain_v1/langchain/chat_models/base.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:18:34.589Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-09-20T08:24:05.454Z" }
 ---
 
 ## Overview
@@ -124,7 +124,7 @@ If inference fails and `model_provider` is not provided, a `ValueError` lists su
 
 The `_BUILTIN_PROVIDERS` dictionary maps provider names to module paths, class names, and instantiation functions. Each entry is a tuple: `(module_path, class_name, creator_func)`.
 
-**Representative Entries** (repo://libs/langchain_v1/langchain/chat_models/base.py#L56-L97):
+**All Built-in Providers** (repo://libs/langchain_v1/langchain/chat_models/base.py#L56-L97):
 
 | Provider | Package | Class | Module | Notes |
 |---|---|---|---|---|
@@ -134,6 +134,7 @@ The `_BUILTIN_PROVIDERS` dictionary maps provider names to module paths, class n
 | `azure_ai` | `langchain-azure-ai` | `AzureAIOpenAIApiChatModel` | `langchain_azure_ai.chat_models` | Submodule import |
 | `google_vertexai` | `langchain-google-vertexai` | `ChatVertexAI` | `langchain_google_vertexai` | |
 | `google_genai` | `langchain-google-genai` | `ChatGoogleGenerativeAI` | `langchain_google_genai` | |
+| `google_anthropic_vertex` | `langchain-google-vertexai` | `ChatAnthropicVertex` | `langchain_google_vertexai.model_garden` | Google's Anthropic model on Vertex |
 | `anthropic_bedrock` | `langchain-aws` | `ChatAnthropicBedrock` | `langchain_aws` | Bedrock-hosted Anthropic |
 | `bedrock` | `langchain-aws` | `ChatBedrock` | `langchain_aws` | Generic Bedrock models |
 | `bedrock_converse` | `langchain-aws` | `ChatBedrockConverse` | `langchain_aws` | Bedrock Converse API |
@@ -144,6 +145,7 @@ The `_BUILTIN_PROVIDERS` dictionary maps provider names to module paths, class n
 | `huggingface` | `langchain-huggingface` | `ChatHuggingFace` | `langchain_huggingface` | Uses `from_model_id()` |
 | `ibm` | `langchain-ibm` | `ChatWatsonx` | `langchain_ibm` | Uses `model_id=` param |
 | `litellm` | `langchain-litellm` | `ChatLiteLLM` | `langchain_litellm` | |
+| `meta` | `langchain-meta` | `ChatMetaModel` | `langchain_meta` | |
 | `mistralai` | `langchain-mistralai` | `ChatMistralAI` | `langchain_mistralai` | |
 | `nvidia` | `langchain-nvidia-ai-endpoints` | `ChatNVIDIA` | `langchain_nvidia_ai_endpoints` | |
 | `ollama` | `langchain-ollama` | `ChatOllama` | `langchain_ollama` | Fallback to `langchain_community` |
@@ -152,11 +154,12 @@ The `_BUILTIN_PROVIDERS` dictionary maps provider names to module paths, class n
 | `together` | `langchain-together` | `ChatTogether` | `langchain_together` | |
 | `upstage` | `langchain-upstage` | `ChatUpstage` | `langchain_upstage` | |
 | `xai` | `langchain-xai` | `ChatXAI` | `langchain_xai` | |
+| `baseten` | `langchain-baseten` | `ChatBaseten` | `langchain_baseten` | |
 | `langsmith` | `langchain-openai` | `ChatOpenAI` | `langchain_openai` | Routes via LangSmith gateway |
 
 **Design notes:**
 
-- The registry is **not exhaustive**. Unlisted providers can still be used if their integration package is installed, but model name inference will not work; `model_provider` must be specified.
+- The registry contains 28 built-in providers. It is **not exhaustive**. Unlisted providers can still be used if their integration package is installed, but model name inference will not work; `model_provider` must be specified explicitly.
 - Most entries use the standard `_call` creator function, which directly instantiates the class.
 - Special creators: `huggingface` uses `from_model_id(model_id=...)`, `ibm` uses `model_id=...`, `langsmith` wraps instantiation with gateway configuration.
 
@@ -199,433 +202,310 @@ Forwards all kwargs directly to the provider's `__init__`.
   - Sets `use_responses_api=True` to enable compatibility with gateway
   - Falls back to `LANGSMITH_API_KEY` if `LANGSMITH_GATEWAY_API_KEY` not set
 
-```python
-def _init_langsmith(cls: type[BaseChatModel], **kwargs: Any) -> BaseChatModel:
-    _apply_gateway_config(
-        kwargs,
-        cls,
-        base_url_field="openai_api_base",
-        api_key_field="openai_api_key",
-        provider_path="v1",
-        api_key_env=("LANGSMITH_GATEWAY_API_KEY", "LANGSMITH_API_KEY"),
-        default_base_url="https://gateway.smith.langchain.com/v1",
-    )
-    kwargs["use_responses_api"] = True
-    return cls(**kwargs)
-```
+## Fixed Model Initialization (Non-Configurable)
 
-**Parameter Routing**:
+When `model` is a non-None string and `configurable_fields` is `None` (the default), `init_chat_model` immediately invokes a helper function to parse the model identifier, look up the provider's creator function, and instantiate the chat model. The resulting `BaseChatModel` is immediately ready for `invoke()`, `stream()`, or other operations without requiring runtime configuration.
 
-All `**kwargs` passed to `init_chat_model` are forwarded to the provider's constructor. The provider's parameter validation enforces which kwargs are accepted. Common cross-provider kwargs (`temperature`, `max_tokens`, `timeout`, `max_retries`) work on most providers; provider-specific kwargs (e.g., `openai_api_key`, `anthropic_api_url`) are only valid for their target provider.
-
-## Fixed Model Initialization
-
-When `model` is specified and `configurable_fields` is `None` (default), `init_chat_model` immediately instantiates and returns a `BaseChatModel`:
+**Flow:**
 
 ```python
-init_chat_model("gpt-4", temperature=0.7, max_tokens=500)
-# Returns ChatOpenAI instance, ready to invoke
+# Fixed (non-configurable) - returns ready-to-use BaseChatModel
+model = init_chat_model("openai:gpt-5.5", temperature=0.7)
+model.invoke("Hello")  # Works immediately
 ```
 
-**Control flow** (repo://libs/langchain_v1/langchain/chat_models/base.py#L515-L520):
-
-```python
-if not configurable_fields:
-    return _init_chat_model_helper(
-        cast("str", model),
-        model_provider=model_provider,
-        **kwargs,
-    )
-```
-
-The `_init_chat_model_helper` function parses the model, retrieves the creator, and instantiates:
-
-```python
-def _init_chat_model_helper(
-    model: str,
-    *,
-    model_provider: str | None = None,
-    **kwargs: Any,
-) -> BaseChatModel:
-    model, model_provider = _parse_model(model, model_provider)
-    creator_func = _get_chat_model_creator(model_provider)
-    return creator_func(model=model, **kwargs)
-```
-
-**Error handling:**
-
-- If the package is missing: `ImportError` with suggestion to `pip install <package>`
-- If the provider is unknown: `ValueError` listing all supported providers
-- If model_provider inference fails: `ValueError` with docs link
+1. `_parse_model()` extracts provider and model name from the input string
+2. `_get_chat_model_creator()` retrieves the provider's cached creator function
+3. The creator function instantiates the class with merged kwargs
+4. `BaseChatModel` instance is returned
 
 ## Runtime-Configurable Model Initialization
 
-When `configurable_fields` is not `None` or `model` is `None`, `init_chat_model` returns a `_ConfigurableModel`, a `Runnable` wrapper that defers instantiation until config is provided at invoke time.
+When `model` is `None` or `configurable_fields` is not `None`, `init_chat_model` returns a `_ConfigurableModel` instance instead of an actual chat model. This allows deferred, runtime-switchable initialization.
 
-**Use cases:**
+**Flow:**
 
-1. **No default model** – select model at runtime:
-   ```python
-   model = init_chat_model()  # No model specified
-   model.invoke("hello", config={"configurable": {"model": "gpt-4"}})
-   model.invoke("hello", config={"configurable": {"model": "claude-opus-4-7"}})
-   ```
+```python
+# Configurable - returns _ConfigurableModel
+model = init_chat_model(configurable_fields=("model", "temperature"))
 
-2. **Default model, switchable parameters** – override specific fields at runtime:
-   ```python
-   model = init_chat_model(
-       "gpt-4",
-       configurable_fields=("temperature", "max_tokens"),
-       temperature=0.5,
-       max_tokens=100
-   )
-   model.invoke(
-       "hello",
-       config={"configurable": {"temperature": 0.9, "max_tokens": 500}}
-   )
-   ```
+# Model is instantiated later with runtime config
+model.invoke(
+    "Hello",
+    config={"configurable": {"model": "gpt-5.5", "temperature": 0.9}}
+)
+```
 
-3. **Default model, fully configurable** – switch model or any parameter at runtime:
-   ```python
-   model = init_chat_model(
-       "gpt-4",
-       configurable_fields="any",  # All fields configurable
-       config_prefix="my_model"
-   )
-   model.invoke("hello")  # Uses gpt-4, temperature=None
-   model.invoke(
-       "hello",
-       config={
-           "configurable": {
-               "my_model_model": "claude-opus-4-7",
-               "my_model_temperature": 0.8
-           }
-       }
-   )
-   ```
+### _ConfigurableModel Structure and Lifecycle
 
-### _ConfigurableModel
+`_ConfigurableModel` is a `Runnable` that wraps the actual model initialization. It implements the following lifecycle:
 
-**Location**: `repo://libs/langchain_v1/langchain/chat_models/base.py#L657-L1050`
-
-`_ConfigurableModel` is a `Runnable[LanguageModelInput, Any]` that queues model initialization and operations until a config is provided:
-
-**State:**
-- `_default_config`: Dictionary of default parameter values (e.g., `{"model": "gpt-4", "temperature": 0.5}`)
-- `_configurable_fields`: Which fields can be overridden at runtime (`"any"`, a list of field names)
-- `_config_prefix`: Namespace for config keys (e.g., `"my_model_"`)
+**Initialization** – stores configuration parameters and flags:
+- `_default_config`: Dictionary of parameter defaults (e.g., `{"model": "gpt-5.5", "temperature": 0.7}`)
+- `_configurable_fields`: Either `"any"` (all fields configurable) or a whitelist of field names
+- `_config_prefix`: String prefix (e.g., `"model_a"`) for isolating config keys when multiple configurable models exist in the same application
 - `_queued_declarative_operations`: List of method calls (e.g., `bind_tools`, `with_structured_output`) to apply after model instantiation
 
-**Lifecycle:**
+**Declarative Operations** – intercepted and queued:
+- When `bind_tools()` or `with_structured_output()` is called on a `_ConfigurableModel`, `__getattr__` intercepts the call instead of delegating to the underlying model (which doesn't exist yet)
+- The operation and its arguments are recorded in `_queued_declarative_operations`
+- A new `_ConfigurableModel` is returned with the operation queued, enabling method chaining without mutation
 
-1. **Instantiation**: `init_chat_model(...)` creates `_ConfigurableModel` with default config and queued operations
-2. **Declarative operations** (e.g., `.bind_tools(...)`): Operations are queued; a new `_ConfigurableModel` is returned without mutation
-3. **Invocation** (e.g., `.invoke(..., config=...)`): `_model(config)` is called to:
-   - Merge default and runtime config
-   - Call `_init_chat_model_helper` to instantiate the actual model
-   - Apply all queued operations in order
-   - Return the configured model instance
-4. **Streaming/batch operations** delegate to the instantiated model
+**Runtime Invocation** – deferred model instantiation:
+- On `invoke()`, `stream()`, or other execution methods, `_model(config)` is called to construct the actual model
+- `_model_params(config)` extracts runtime overrides from `config["configurable"]`, applying the `_config_prefix` filter and `_configurable_fields` whitelist
+- Overrides are merged over `_default_config`
+- `_init_chat_model_helper()` instantiates the actual `BaseChatModel` using merged parameters
+- Queued declarative operations are applied in order to the instantiated model
+- The decorated model is delegated to for the actual invocation
 
-**Config merging** (repo://libs/langchain_v1/langchain/chat_models/base.py#L711-L727):
-
-```python
-def _model(self, config: RunnableConfig | None = None) -> Runnable[Any, Any]:
-    params = {**self._default_config, **self._model_params(config)}
-    model = _init_chat_model_helper(**params)
-    for name, args, kwargs in self._queued_declarative_operations:
-        model = getattr(model, name)(*args, **kwargs)
-    return model
-
-def _model_params(self, config: RunnableConfig | None) -> dict[str, Any]:
-    config = ensure_config(config)
-    # Extract configurable params and remove prefix
-    model_params = {
-        _remove_prefix(k, self._config_prefix): v
-        for k, v in config.get("configurable", {}).items()
-        if k.startswith(self._config_prefix)
-    }
-    # Filter to only allowed fields if not "any"
-    if self._configurable_fields != "any":
-        model_params = {k: v for k, v in model_params.items() if k in self._configurable_fields}
-    return model_params
-```
-
-**Declarative operations** (repo://libs/langchain_v1/langchain/chat_models/base.py#L681-L702):
-
-Methods like `bind_tools` and `with_structured_output` are intercepted and queued instead of applied immediately:
+**Example: Full Lifecycle**
 
 ```python
-def __getattr__(self, name: str) -> Any:
-    if name in _DECLARATIVE_METHODS:
-        def queue(*args: Any, **kwargs: Any) -> _ConfigurableModel:
-            queued_declarative_operations = list(self._queued_declarative_operations)
-            queued_declarative_operations.append((name, args, kwargs))
-            return _ConfigurableModel(
-                default_config=dict(self._default_config),
-                configurable_fields=self._configurable_fields,
-                config_prefix=self._config_prefix,
-                queued_declarative_operations=queued_declarative_operations,
-            )
-        return queue
-    # ... delegate to default model if one exists
-```
-
-**Caching**: Creator functions are cached with `@functools.lru_cache` to avoid redundant module imports.
-
-## Common Parameter Mapping Examples
-
-### Temperature and max_tokens
-
-These are nearly universal but have different default values and ranges per provider:
-
-```python
-# OpenAI: temperature 0–2 (default 1)
-init_chat_model("gpt-4", temperature=0.7, max_tokens=500)
-
-# Anthropic: temperature 0–1 (default 1)
-init_chat_model("claude-opus-4-7", temperature=0.7, max_tokens=500)
-
-# Google Vertex AI: temperature 0–2
-init_chat_model("google_vertexai:gemini-1.5-pro", temperature=0.7)
-```
-
-Check the provider's integration documentation for exact ranges and defaults.
-
-### API Keys and Base URLs
-
-Providers vary in parameter names:
-
-```python
-# OpenAI: openai_api_key, openai_api_base
-init_chat_model("gpt-4", openai_api_key="...", openai_api_base="https://custom.com/v1")
-
-# Anthropic: anthropic_api_key, anthropic_api_url
-init_chat_model("claude-opus-4-7", anthropic_api_key="...", anthropic_api_url="https://custom.com")
-
-# Vertex AI: uses GCP credentials from environment, or project_id, location
-init_chat_model("google_vertexai:gemini-1.5-pro", project_id="my-project")
-```
-
-Environment variable fallbacks are provider-specific; check the integration package docs.
-
-### Retry and Timeout
-
-Common cross-provider params:
-
-```python
-init_chat_model(
-    "gpt-4",
-    max_retries=3,
-    timeout=30.0,
-)
-```
-
-### Bedrock Region and Model IDs
-
-AWS Bedrock requires region and uses full model IDs:
-
-```python
-init_chat_model(
-    "bedrock:amazon.titan-text-express-v1",
-    region_name="us-east-1",
-)
-```
-
-## Testing and Example Patterns
-
-### Fixed Model Initialization
-
-```python
-from langchain.chat_models import init_chat_model
-
-# Explicit provider prefix
-llm = init_chat_model("openai:gpt-4", temperature=0)
-response = llm.invoke("What is 2+2?")
-
-# Inferred provider
-llm = init_chat_model("gpt-4", temperature=0)
-response = llm.invoke("What is 2+2?")
-
-# Separate model_provider parameter
-llm = init_chat_model("gpt-4", model_provider="openai", temperature=0)
-```
-
-### Configurable Model with Partial Override
-
-```python
-from langchain.chat_models import init_chat_model
-
+# 1. Create configurable model with default OpenAI
 model = init_chat_model(
-    "gpt-4",
-    configurable_fields=("temperature", "max_tokens"),
-    temperature=0.5,
-    max_tokens=100,
+    "openai:gpt-5.5",
+    configurable_fields=("model", "temperature"),
+    config_prefix="my",
+    temperature=0.5
 )
 
-# Use defaults
-result = model.invoke("hello")
+# 2. Queue declarative operation
+model_with_tools = model.bind_tools([tool1, tool2])
+# model itself is unchanged; the queue is in model_with_tools
 
-# Override at runtime
-result = model.invoke(
-    "hello",
+# 3. Invoke with runtime override
+response = model_with_tools.invoke(
+    "Hello",
     config={
         "configurable": {
-            "temperature": 0.9,
-            "max_tokens": 500,
+            "my_model": "anthropic:claude-opus",
+            "my_temperature": 0.8
+        }
+    }
+)
+# At invocation:
+# - model_with_tools._model(config) extracts {"model": "anthropic:claude-opus", "temperature": 0.8}
+# - Merges with defaults: {"model": "anthropic:claude-opus", "temperature": 0.8, ...}
+# - Instantiates ChatAnthropic with merged params
+# - Applies bind_tools to the instance
+# - Returns the decorated model, which handles the actual invoke
+```
+
+### Configuration Key Mapping with config_prefix
+
+When `config_prefix` is set, configuration keys are namespaced to avoid collisions. The prefix is automatically stripped during lookup:
+
+```python
+model = init_chat_model(
+    "gpt-5.5",
+    configurable_fields=("temperature", "max_tokens"),
+    config_prefix="llm1"  # Becomes "llm1_" internally
+)
+
+model.invoke(
+    "Hello",
+    config={
+        "configurable": {
+            "llm1_temperature": 0.9,  # Stripped to "temperature"
+            "llm1_max_tokens": 200,   # Stripped to "max_tokens"
         }
     }
 )
 ```
 
-### Configurable Model with No Default
+### Whitelisting Configurable Fields
+
+By default, `configurable_fields="any"` allows any field to be overridden at runtime, including security-sensitive ones like `api_key` and `base_url`. For production use, explicitly whitelist fields to prevent unintended runtime modification:
 
 ```python
-from langchain.chat_models import init_chat_model
-
-model = init_chat_model(temperature=0.5)  # No model specified
-
-# Select model at runtime
-result = model.invoke(
-    "hello",
-    config={"configurable": {"model": "gpt-4"}}
+# ✓ Safe: only temperature and max_tokens can change
+model = init_chat_model(
+    "gpt-5.5",
+    configurable_fields=("temperature", "max_tokens")
 )
 
-result = model.invoke(
-    "hello",
-    config={"configurable": {"model": "claude-opus-4-7"}}
+# ✗ Dangerous: api_key can be redirected at runtime
+model = init_chat_model(
+    "gpt-5.5",
+    configurable_fields="any"
 )
 ```
 
-### Chaining with Prompts
+## Module Import and Error Handling
+
+The `_import_module()` function dynamically imports provider integration packages with helpful error messages:
 
 ```python
-from langchain.chat_models import init_chat_model
-from langchain_core.prompts import ChatPromptTemplate
-
-model = init_chat_model("gpt-4", temperature=0)
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful assistant."),
-    ("user", "{input}"),
-])
-
-chain = prompt | model
-response = chain.invoke({"input": "What is 2+2?"})
+def _import_module(module: str, class_name: str) -> ModuleType:
+    try:
+        return importlib.import_module(module)
+    except ImportError as e:
+        pkg = module.split(".", maxsplit=1)[0].replace("_", "-")
+        msg = f"Initializing {class_name} requires the {pkg} package. Please install it with `pip install {pkg}`"
+        raise ImportError(msg) from e
 ```
 
-### Binding Tools
+**Fallback Logic:**
+
+- For `ollama`, if `langchain_ollama` is not installed, it tries `langchain_community.chat_models` as a fallback for backward compatibility
+- For other providers, a clear error message is raised immediately
+
+## Model-to-Provider Inference
+
+The `_attempt_infer_model_provider()` function uses case-insensitive prefix matching to infer the provider from a model name:
+
+```python
+def _attempt_infer_model_provider(model_name: str) -> str | None:
+    model_lower = model_name.lower()
+    
+    # OpenAI models (including newer models and aliases)
+    if any(model_lower.startswith(pre) for pre in ("gpt-", "o1", "o3", "chatgpt", "text-davinci")):
+        return "openai"
+    
+    # Anthropic models
+    if model_lower.startswith("claude"):
+        return "anthropic"
+    
+    # ... (other patterns)
+    
+    return None  # Cannot infer
+```
+
+**Special Case – Gemini (google_vertexai vs google_genai):**
+
+When a model name starts with `gemini`, `_attempt_infer_model_provider()` returns `"google_vertexai"` but emits a `DeprecationWarning`. Future major releases will change the default to `"google_genai"`. Users are encouraged to pass `model_provider='google_genai'` or use the prefix form `"google_genai:gemini-1.5"` to lock in the desired behavior.
+
+## Batching Behavior
+
+`_ConfigurableModel` implements `batch()`, `abatch()`, `batch_as_completed()`, and `abatch_as_completed()` with an optimization: if only one or zero configs are provided, it delegates directly to the underlying model's batch implementation. If multiple distinct configs are provided, it falls back to the base `Runnable.batch()` which parallelizes the invocations.
+
+## Common Patterns
+
+### 1. Fixed Model – Most Common Use Case
 
 ```python
 from langchain.chat_models import init_chat_model
+
+# Simple: infer OpenAI from model name
+model = init_chat_model("gpt-5.5", temperature=0.7)
+model.invoke("What is 2+2?")
+
+# Explicit provider prefix
+model = init_chat_model("anthropic:claude-opus", temperature=0.8)
+response = model.invoke("Hello")
+
+# With custom parameters
+model = init_chat_model(
+    "openai:gpt-5.5",
+    temperature=0.5,
+    max_tokens=100,
+    timeout=30,
+    api_key="sk-..."
+)
+```
+
+### 2. Configurable Model – No Default
+
+```python
+# Defer all decisions to runtime
+model = init_chat_model()
+
+# Later, with configuration
+response = model.invoke(
+    "Question",
+    config={
+        "configurable": {
+            "model": "gpt-5.5",
+            "model_provider": "openai"
+        }
+    }
+)
+```
+
+### 3. Configurable Model – With Default
+
+```python
+# Start with OpenAI, but allow runtime switching
+model = init_chat_model(
+    "openai:gpt-5.5",
+    configurable_fields="any",
+    temperature=0.7
+)
+
+# Use default
+model.invoke("Question 1")
+
+# Switch provider and adjust temperature
+model.invoke(
+    "Question 2",
+    config={
+        "configurable": {
+            "model": "claude-opus",
+            "model_provider": "anthropic",
+            "temperature": 0.9
+        }
+    }
+)
+```
+
+### 4. Isolated Configurable Models with config_prefix
+
+```python
+# Two independent configurable models in the same chain
+summarizer = init_chat_model(
+    configurable_fields=("model", "temperature"),
+    config_prefix="summarizer",
+    temperature=0.3
+)
+
+translator = init_chat_model(
+    configurable_fields=("model", "temperature"),
+    config_prefix="translator",
+    temperature=0.5
+)
+
+chain = (
+    {"text": lambda x: x}
+    | {"summary": summarizer, "translation": translator}
+)
+
+chain.invoke(
+    "Long document",
+    config={
+        "configurable": {
+            "summarizer_model": "gpt-5.5",
+            "translator_model": "claude-opus"
+        }
+    }
+)
+```
+
+### 5. Binding Tools to Configurable Models
+
+```python
 from pydantic import BaseModel, Field
 
-class Calculator(BaseModel):
-    """Perform arithmetic."""
-    a: int = Field(..., description="First number")
-    b: int = Field(..., description="Second number")
-
-model = init_chat_model("gpt-4")
-model_with_tools = model.bind_tools([Calculator])
-
-result = model_with_tools.invoke("What is 2+2?")
-```
-
-### Configurable Model with Tools
-
-```python
-from langchain.chat_models import init_chat_model
-from pydantic import BaseModel, Field
-
-class Calculator(BaseModel):
-    """Perform arithmetic."""
-    a: int = Field(..., description="First number")
-    b: int = Field(..., description="Second number")
+class WeatherTool(BaseModel):
+    """Get weather for a location"""
+    location: str = Field(..., description="City, state")
 
 model = init_chat_model(
-    "gpt-4",
-    configurable_fields=("model", "model_provider"),
+    configurable_fields=("model", "model_provider")
 )
-model_with_tools = model.bind_tools([Calculator])
 
-# Use with default gpt-4
-result = model_with_tools.invoke("What is 2+2?")
+# Chain operations together
+model_with_tools = model.bind_tools([WeatherTool])
 
-# Switch to Claude at runtime
-result = model_with_tools.invoke(
-    "What is 2+2?",
-    config={"configurable": {"model": "claude-opus-4-7"}}
+# Invoke with configuration
+response = model_with_tools.invoke(
+    "What's the weather in NYC?",
+    config={"configurable": {"model": "gpt-5.5"}}
 )
 ```
 
-## LangSmith Gateway Integration
+## Related Topics
 
-The `langsmith` provider bridges to LangSmith's unified LLM gateway, allowing multiple non-OpenAI models to be served through a common OpenAI-compatible API:
-
-```python
-init_chat_model("langsmith:moonshotai/kimi-k3")
-```
-
-**Configuration flow**:
-
-1. `_init_langsmith` is invoked instead of standard `_call`
-2. `_apply_gateway_config` reads:
-   - `LANGSMITH_GATEWAY` or defaults to `https://gateway.smith.langchain.com`
-   - `LANGSMITH_GATEWAY_API_KEY` (preferred) or `LANGSMITH_API_KEY`
-   - Injects these as `openai_api_base` and `openai_api_key`
-3. Sets `use_responses_api=True` for compatibility
-4. Returns a `ChatOpenAI` instance pointing to the gateway
-
-**Example**:
-
-```python
-import os
-os.environ["LANGSMITH_GATEWAY_API_KEY"] = "..."
-model = init_chat_model("langsmith:moonshotai/kimi-k3")
-# Routes to https://gateway.smith.langchain.com/v1/chat/completions
-```
-
-## Extension and Adding New Providers
-
-To add support for a new provider integration, update `_BUILTIN_PROVIDERS` in `repo://libs/langchain_v1/langchain/chat_models/base.py`:
-
-1. Add an entry: `"provider_name": (module_path, ClassName, creator_func)`
-2. If using standard instantiation, use `_call`
-3. If the constructor uses a non-standard parameter for model name, create a custom creator
-4. Ensure the provider module exports the class at the specified module path
-5. The integration package must be pip-installable and named `langchain-<provider-name>` (with underscores converted to hyphens)
-
-Example for a hypothetical "myai" provider:
-
-```python
-_BUILTIN_PROVIDERS = {
-    ...
-    "myai": ("langchain_myai", "ChatMyAI", _call),
-}
-```
-
-Then install with `pip install langchain-myai` and use:
-
-```python
-init_chat_model("myai:my-model-v1")
-# or
-init_chat_model("my-model-v1", model_provider="myai")
-```
-
-Update model name prefix inference in `_attempt_infer_model_provider` if a stable, unambiguous prefix exists (e.g., all MyAI models start with `myai-`).
-
-## Security Considerations
-
-**API Key Exposure**: When `configurable_fields="any"`, all parameters including `api_key`, `openai_api_key`, `anthropic_api_key`, and `base_url` become runtime-configurable. In production, restrict configurable fields to safe parameters:
-
-```python
-# ❌ Unsafe: accepts any field, including secrets
-model = init_chat_model("gpt-4", configurable_fields="any")
-
-# ✅ Safe: whitelist only model switching and temperature
-model = init_chat_model(
-    "gpt-4",
-    configurable_fields=("temperature", "max_tokens"),
-)
-```
-
-**Runtime Configuration Source**: Validate that config dicts come from trusted sources. If config is derived from user input, filter keys to prevent unexpected parameter injection.
+- [Chat Models](/openwiki/chat-models.md) – Base classes and model concepts
+- [Runnables](/openwiki/runnables.md) – Configuration and invocation patterns
+- [Quickstart](/openwiki/quickstart.md) – Getting started with LangChain

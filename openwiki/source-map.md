@@ -3,6 +3,9 @@ type: "Reference"
 title: "Source Map: Repository File Organization"
 description: "Quick reference for locating code by topic, mapping LangChain concepts to their implementation paths across the monorepo including core abstractions, agents, middleware, partners, and configuration files."
 tags: [reference, file-organization, monorepo, codebase-map, pathfinding]
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-09-20T08:24:05.454Z
 sources:
   - id: openwiki-source-4d1645cb6317345817452838
     resource: repo://.pre-commit-config.yaml
@@ -44,10 +47,7 @@ sources:
     resource: repo://libs/partners/openai/langchain_openai/chat_models/base.py
   - id: openwiki-source-bd29e79613d5f366a00068f5
     resource: repo://libs/standard-tests/langchain_tests/base.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-08T08:27:09.597Z" }
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-08T08:27:09.597Z
+generated: { by: "openwiki/0.5.0", at: "2026-09-20T08:24:05.454Z" }
 ---
 
 ## Overview
@@ -89,7 +89,7 @@ This page provides a quick reference for locating code by topic in the LangChain
 
 ```
 /libs/
-├── core/                           # langchain-core: Base abstractions (v1.6.2)
+├── core/                           # langchain-core: Base abstractions (v1.6.3)
 │   ├── langchain_core/
 │   │   ├── language_models/        # BaseChatModel and language model abstractions
 │   │   ├── messages/               # Message types and content blocks
@@ -106,7 +106,7 @@ This page provides a quick reference for locating code by topic in the LangChain
 │   ├── Makefile
 │   └── pyproject.toml
 │
-├── langchain_v1/                   # langchain: Orchestration and agents (v1.4.0)
+├── langchain_v1/                   # langchain: Orchestration and agents (v1.4.2)
 │   ├── langchain/
 │   │   ├── agents/
 │   │   │   ├── factory.py          # Agent factory and graph construction
@@ -128,8 +128,14 @@ This page provides a quick reference for locating code by topic in the LangChain
 │   ├── Makefile
 │   └── pyproject.toml
 │
+├── langchain/                      # langchain-classic: Legacy orchestration (v1.0.8)
+│   ├── langchain_classic/
+│   ├── tests/
+│   ├── Makefile
+│   └── pyproject.toml
+│
 ├── partners/                       # Provider-specific integrations
-│   ├── openai/                     # ChatOpenAI, embeddings, etc.
+│   ├── openai/                     # ChatOpenAI, embeddings, etc. (v1.6.2)
 │   ├── anthropic/                  # ChatAnthropic (Claude)
 │   ├── ollama/                     # ChatOllama (local models)
 │   ├── groq/                       # ChatGroq
@@ -144,6 +150,7 @@ This page provides a quick reference for locating code by topic in the LangChain
 │   ├── qdrant/                     # Qdrant vector store
 │   ├── exa/                        # Exa search
 │   ├── nomic/                      # Nomic embeddings
+│   ├── typesafe/                   # TypeSafe integrations
 │   └── Makefile
 │
 ├── model-profiles/                 # LLM behavior and capability profiles
@@ -266,8 +273,8 @@ The `BaseTool` in `repo://libs/core/langchain_core/tools/base.py` provides:
 
 ```
 User Applications
-  ├─→ langchain (v1.4.0)
-  │    ├─→ langchain-core (v1.6.2)
+  ├─→ langchain (v1.4.2)
+  │    ├─→ langchain-core (v1.6.3)
   │    └─→ LangGraph (state machines)
   │
   ├─→ langchain-core (direct use)

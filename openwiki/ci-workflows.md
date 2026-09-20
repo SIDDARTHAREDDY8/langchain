@@ -2,9 +2,6 @@
 type: "Reference"
 title: "CI/CD Workflows: GitHub Actions and Release Process"
 openwiki_generated: true
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:18:34.589Z
 sources:
   - id: openwiki-source-34e57b5a3a0c875639ab72a7
     resource: repo://.github/scripts/check_diff.py
@@ -29,6 +26,9 @@ sources:
   - id: openwiki-source-f8781d847f6481a966a44a68
     resource: repo://.github/workflows/pr_labeler.yml
 generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:18:34.589Z" }
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-09-20T08:24:05.454Z
 ---
 
 

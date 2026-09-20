@@ -5,7 +5,7 @@ description: Traces the runtime lifecycle of an agent from user input through mo
 tags: [agent-execution, control-flow, state-machine, loop-control, tool-dispatch, middleware, langchain]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-03T15:18:34.589Z
+    at: 2026-09-20T08:24:05.454Z
 sources:
   - id: openwiki-source-71e882e1ac9757ea8e959a7c
     resource: repo://libs/langchain_v1/langchain/agents/factory.py

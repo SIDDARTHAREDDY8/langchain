@@ -2,9 +2,6 @@
 type: "Reference"
 title: "Create a basic agent"
 openwiki_generated: true
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:18:34.589Z
 sources:
   - id: openwiki-source-71e882e1ac9757ea8e959a7c
     resource: repo://libs/langchain_v1/langchain/agents/factory.py
@@ -14,7 +11,10 @@ sources:
     resource: repo://libs/langchain_v1/langchain/agents/middleware/_trace_policy.py
   - id: openwiki-source-03e8ca0eebe37feda8566793
     resource: repo://libs/langchain_v1/langchain/agents/middleware/types.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:18:34.589Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-09-20T08:24:05.454Z" }
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-09-20T08:24:05.454Z
 ---
 
 
@@ -49,11 +49,10 @@ for chunk in agent.stream(inputs, stream_mode="updates"):
 
 The agent factory constructs a **state machine graph** with the following structure:
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 graph TD
     START["START"] --> ENTRY["Entry Node<br/>(before_agent)"]
-    ENTRY --> LOOP_ENTRY["Loop Entry<br/>(before_model | model)"]
+    ENTRY --> LOOP_ENTRY["Loop Entry<br/>(before_model, model)"]
     LOOP_ENTRY --> MODEL["Model Node<br/>(LLM Call)"]
     MODEL --> AFTER_MODEL["After Model<br/>(middleware)"]
     AFTER_MODEL --> ROUTER{Has Tool Calls?}
@@ -64,6 +63,9 @@ graph TD
     TOOLS_ROUTER -->|Yes| EXIT
     EXIT --> END["END"]
 ```
+
+Agent state machine graph showing the flow from START through entry node, model call, tool execution, and exit node.
+
 
 **Key Nodes:**
 
