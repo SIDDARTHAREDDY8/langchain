@@ -4432,3 +4432,56 @@ def test_character_text_splitter_chunk_size_effect(
         keep_separator=False,
     )
     assert splitter.split_text(text) == expected
+
+
+def test_recursive_json_splitter_ensure_ascii_false_packs_chunks() -> None:
+    """Chunks are sized against the unescaped serialization when ensure_ascii=False.
+
+    Regression test for https://github.com/langchain-ai/langchain/issues/40761:
+    chunk boundaries were picked against the escaped-ASCII serialization, so
+    non-ASCII output came back far below max_chunk_size.
+    """
+    data = {str(i): "\u4f60\u597d\u4e16\u754c" * 10 for i in range(20)}
+    splitter = RecursiveJsonSplitter(max_chunk_size=500)
+
+    chunks = splitter.split_text(json_data=data, ensure_ascii=False)
+
+    # Fewer chunks than the ASCII form: the unescaped serialization is ~6x
+    # shorter for CJK, so it packs tighter against the same limit.
+    ascii_chunks = splitter.split_text(json_data=data, ensure_ascii=True)
+    assert len(chunks) < len(ascii_chunks)
+
+    # Chunks pack close to max_chunk_size rather than ~1/6 of it.
+    # (The greedy splitter may leave a small tail chunk; the first chunk
+    # must fill up like the ASCII form does.)
+    assert max(len(c) for c in chunks) > 500 * 0.5
+    for chunk in chunks:
+        assert len(chunk) <= 500
+        assert json.loads(chunk)  # still valid JSON
+
+
+def test_recursive_json_splitter_ensure_ascii_default_unchanged() -> None:
+    """Default behavior (ensure_ascii=True) is unchanged by the fix."""
+    data = {str(i): "\u4f60\u597d\u4e16\u754c" * 10 for i in range(20)}
+    splitter = RecursiveJsonSplitter(max_chunk_size=500)
+
+    chunks = splitter.split_text(json_data=data)
+
+    expected = [len(json.dumps(c)) for c in splitter.split_json(data)]
+    assert [len(c) for c in chunks] == expected
+    assert max(len(c) for c in chunks) <= 500
+
+
+def test_recursive_json_splitter_split_json_ensure_ascii_kwarg() -> None:
+    """split_json honors ensure_ascii when measuring chunk sizes."""
+    data = {str(i): "\u4f60\u597d\u4e16\u754c" * 10 for i in range(20)}
+    splitter = RecursiveJsonSplitter(max_chunk_size=500)
+
+    chunks_false = splitter.split_json(data, ensure_ascii=False)
+    chunks_true = splitter.split_json(data, ensure_ascii=True)
+
+    split_false = splitter.split_text(json_data=data, ensure_ascii=False)
+    split_true = splitter.split_text(json_data=data, ensure_ascii=True)
+    assert len(chunks_false) == len(split_false)
+    assert len(chunks_true) == len(split_true)
+    assert all(len(json.dumps(c, ensure_ascii=False)) <= 500 for c in chunks_false)
